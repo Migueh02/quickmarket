@@ -1,0 +1,54 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Perfil y subcolección de notificaciones del propio usuario.
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      match /notifications/{notifId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // Catálogo: tiendas y productos (lectura para clientes/repartidores).
+    match /stores/{storeId} {
+      allow read: if request.auth != null;
+
+      match /products/{productId} {
+        allow read: if request.auth != null;
+        // Transacción de pedido: solo bajar stock, nunca subirlo desde el cliente.
+        allow update: if request.auth != null
+          && request.resource.data.stock is int
+          && request.resource.data.stock >= 0
+          && request.resource.data.stock <= resource.data.stock;
+      }
+    }
+
+    // Pedidos: dueño, repartidor asignado, o pool listo para reparto.
+    match /orders/{orderId} {
+      allow read: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.driverId == request.auth.uid ||
+        (
+          resource.data.status == 'ready_for_pickup' &&
+          resource.data.availableForDrivers == true
+        )
+      );
+
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid;
+
+      // Cliente (simula tienda), repartidor asignado, o toma desde pool listo.
+      allow update: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.driverId == request.auth.uid ||
+        (
+          resource.data.status == 'ready_for_pickup' &&
+          resource.data.availableForDrivers == true
+        )
+      );
+
+      allow delete: if false;
+    }
+  }
+}
